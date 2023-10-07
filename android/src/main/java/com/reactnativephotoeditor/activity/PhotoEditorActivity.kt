@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.util.Log
+import android.view.MotionEvent
 import android.view.View
 import android.view.Window
 import android.view.WindowManager
@@ -72,6 +73,9 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
   private var mRootView: ConstraintLayout? = null
   private val mConstraintSet = ConstraintSet()
   private var mIsFilterVisible = false
+  private var isStickerClicked = false
+  private var selectedStickerBitmap: Bitmap? = null
+
 
   @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,7 +118,7 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
     mRvFilters!!.adapter = mFilterViewAdapter
 
     val pinchTextScalable = intent.getBooleanExtra(PINCH_TEXT_SCALABLE_INTENT_KEY, true)
-    mPhotoEditor = PhotoEditor.Builder(this, mPhotoEditorView)
+    mPhotoEditor = PhotoEditor.Builder(this, mPhotoEditorView!!)
       .setPinchTextScalable(pinchTextScalable) // set flag to make text scalable when pinch
       .build() // build photo editor sdk
     mPhotoEditor?.setOnPhotoEditorListener(this)
@@ -186,14 +190,14 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
 
   private fun initViews() {
     //REDO
-    val imgRedo: ImageView = findViewById(R.id.imgRedo)
-    imgRedo.setOnClickListener(this)
+    // val imgRedo: ImageView = findViewById(R.id.imgRedo)
+    // imgRedo.setOnClickListener(this)
     //UNDO
-    val imgUndo: ImageView = findViewById(R.id.imgUndo)
-    imgUndo.setOnClickListener(this)
+    // val imgUndo: ImageView = findViewById(R.id.imgUndo)
+    // imgUndo.setOnClickListener(this)
     //CLOSE
-    val imgClose: ImageView = findViewById(R.id.imgClose)
-    imgClose.setOnClickListener(this)
+   val imgClose: ImageView = findViewById(R.id.imgClose)
+     imgClose.setOnClickListener(this)
     //SAVE
     val btnSave: TextView = findViewById(R.id.btnSave)
     btnSave.setOnClickListener(this)
@@ -211,7 +215,7 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
     textEditorDialogFragment.setOnTextEditorListener { inputText: String?, newColorCode: Int ->
       val styleBuilder = TextStyleBuilder()
       styleBuilder.withTextColor(newColorCode)
-      mPhotoEditor!!.editText(rootView, inputText, styleBuilder)
+//      mPhotoEditor!!.editText(rootView, inputText, styleBuilder)
       mTxtCurrentTool!!.setText(R.string.label_text)
     }
   }
@@ -224,6 +228,7 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
   }
 
   override fun onRemoveViewListener(viewType: ViewType, numberOfAddedViews: Int) {
+    isStickerClicked = false
     Log.d(
       TAG,
       "onRemoveViewListener() called with: viewType = [$viewType], numberOfAddedViews = [$numberOfAddedViews]"
@@ -238,15 +243,19 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
     Log.d(TAG, "onStopViewChangeListener() called with: viewType = [$viewType]")
   }
 
+  override fun onTouchSourceImage(event: MotionEvent) {
+//    TODO("Not yet implemented")
+  }
+
   @SuppressLint("NonConstantResourceId")
   override fun onClick(view: View) {
     when (view.id) {
-      R.id.imgUndo -> {
-        mPhotoEditor!!.undo()
-      }
-      R.id.imgRedo -> {
-        mPhotoEditor!!.redo()
-      }
+     // R.id.imgUndo -> {
+     //   mPhotoEditor!!.undo()
+     // }
+     // R.id.imgRedo -> {
+     //   mPhotoEditor!!.redo()
+      //}
       R.id.btnSave -> {
         saveImage()
       }
@@ -261,48 +270,59 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
   }
 
   private fun saveImage() {
-    val fileName = System.currentTimeMillis().toString() + ".png"
-    val hasStoragePermission = ContextCompat.checkSelfPermission(
-      this,
-      Manifest.permission.WRITE_EXTERNAL_STORAGE
-    ) == PackageManager.PERMISSION_GRANTED
-    if (hasStoragePermission || isSdkHigherThan28()) {
-      showLoading("Saving...")
-      val path: File = Environment.getExternalStoragePublicDirectory(
-        Environment.DIRECTORY_PICTURES
-      )
-      val file = File(path, fileName)
-      path.mkdirs()
+    if (selectedStickerBitmap != null) {
+        val fileName = System.currentTimeMillis().toString() + ".png"
+        val hasStoragePermission = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+        if (hasStoragePermission || isSdkHigherThan28()) {
+            showLoading("Saving...")
+            val path: File = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES
+            )
+            val file = File(path, fileName)
+            path.mkdirs()
 
-      mPhotoEditor!!.saveAsFile(file.absolutePath, object : OnSaveListener {
-        override fun onSuccess(@NonNull imagePath: String) {
-          hideLoading()
-          val intent = Intent()
-          intent.putExtra("path", imagePath)
-          setResult(ResponseCode.RESULT_OK, intent)
-          finish()
-        }
+            mPhotoEditor!!.saveAsFile(file.absolutePath, object : OnSaveListener {
+                override fun onSuccess(@NonNull imagePath: String) {
+                    hideLoading()
+                    val intent = Intent()
+                    intent.putExtra("path", imagePath)
+                    setResult(ResponseCode.RESULT_OK, intent)
+                    finish()
+                }
 
-        override fun onFailure(@NonNull exception: Exception) {
-          hideLoading()
-          if (!hasStoragePermission) {
+                override fun onFailure(@NonNull exception: Exception) {
+                    hideLoading()
+                    if (!hasStoragePermission) {
+                        requestPer()
+                    } else {
+                        mPhotoEditorView?.let {
+                            val snackBar = Snackbar.make(
+                                it, R.string.save_error,
+                                Snackbar.LENGTH_SHORT)
+                            snackBar.setBackgroundTint(Color.WHITE)
+                            snackBar.setActionTextColor(Color.BLACK)
+                            snackBar.setAction("Ok", null).show()
+                        }
+                    }
+                }
+            })
+        } else {
             requestPer()
-          } else {
-            mPhotoEditorView?.let {
-              val snackBar = Snackbar.make(
-                it, R.string.save_error,
-                Snackbar.LENGTH_SHORT)
-              snackBar.setBackgroundTint(Color.WHITE)
-              snackBar.setActionTextColor(Color.BLACK)
-              snackBar.setAction("Ok", null).show()
-            }
-          }
         }
-      })
     } else {
-      requestPer()
+        mPhotoEditorView?.let {
+            val snackBar = Snackbar.make(
+                it, "Please select a sticker to continue.",
+                Snackbar.LENGTH_SHORT)
+            snackBar.setBackgroundTint(Color.WHITE)
+            snackBar.setActionTextColor(Color.BLACK)
+            snackBar.setAction("Ok", null).show()
+        }
     }
-  }
+}
 
   private fun requestPer() {
     requestPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -328,14 +348,18 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
   }
 
   override fun onStickerClick(bitmap: Bitmap) {
+    isStickerClicked = true
+    // Clear all existing stickers
+    mPhotoEditor!!.clearAllViews()
+    selectedStickerBitmap = bitmap
     mPhotoEditor!!.addImage(bitmap)
     mTxtCurrentTool!!.setText(R.string.label_sticker)
-  }
+}
+
 
   private fun showSaveDialog() {
     val builder = AlertDialog.Builder(this)
     builder.setMessage(getString(R.string.msg_save_image))
-    builder.setPositiveButton("Save") { _: DialogInterface?, _: Int -> saveImage() }
     builder.setNegativeButton("Cancel") { dialog: DialogInterface, _: Int -> dialog.dismiss() }
     builder.setNeutralButton("Discard") { _: DialogInterface?, _: Int -> onCancel() }
     builder.create().show()
@@ -356,7 +380,7 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
       ToolType.SHAPE -> {
         mPhotoEditor!!.setBrushDrawingMode(true)
         mShapeBuilder = ShapeBuilder()
-        mPhotoEditor!!.setShape(mShapeBuilder)
+        mPhotoEditor!!.setShape(mShapeBuilder!!)
         mTxtCurrentTool!!.setText(R.string.label_shape)
         showBottomSheetDialogFragment(mShapeBSFragment)
       }
@@ -365,7 +389,7 @@ open class PhotoEditorActivity : AppCompatActivity(), OnPhotoEditorListener, Vie
         textEditorDialogFragment.setOnTextEditorListener { inputText: String?, colorCode: Int ->
           val styleBuilder = TextStyleBuilder()
           styleBuilder.withTextColor(colorCode)
-          mPhotoEditor!!.addText(inputText, styleBuilder)
+//          mPhotoEditor!!.addText(inputText, styleBuilder)
           mTxtCurrentTool!!.setText(R.string.label_text)
         }
       }
