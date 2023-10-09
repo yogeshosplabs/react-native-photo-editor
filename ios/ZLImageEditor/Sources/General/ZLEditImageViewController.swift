@@ -256,9 +256,16 @@ public class ZLEditImageViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
     
+    var newTools = [ZLImageEditorConfiguration.EditImageTool]()
+    var isStickerAdded = false
+
     public override func viewDidLoad() {
         super.viewDidLoad()
         
+        newTools.removeAll()
+
+        newTools.append(.imageSticker)
+
         self.setupUI()
         
         self.rotationImageView()
@@ -641,6 +648,11 @@ public class ZLEditImageViewController: UIViewController {
     }
     
     func imageStickerBtnClick() {
+        if self.stickersContainer.subviews.count > 0 {
+            self.stickersContainer.subviews.forEach { (view) in
+                (view as? ZLStickerViewAdditional)?.moveToAshbin()
+            }
+        }
         ZLImageEditorConfiguration.default().imageStickerContainerView?.show(in: self.view)
         self.setToolView(show: false)
         self.imageStickerContainerIsHidden = false
@@ -680,33 +692,55 @@ public class ZLEditImageViewController: UIViewController {
     }
     
     @objc func doneBtnClick() {
-        var textStickers: [(ZLTextStickerState, Int)] = []
-        var imageStickers: [(ZLImageStickerState, Int)] = []
-        for (index, view) in self.stickersContainer.subviews.enumerated() {
-            if let ts = view as? ZLTextStickerView, let _ = ts.label.text {
-                textStickers.append((ts.state, index))
-            } else if let ts = view as? ZLImageStickerView {
-                imageStickers.append((ts.state, index))
+        self.setToolView(show: true)
+        self.ashbinView.layer.removeAllAnimations()
+        self.ashbinView.isHidden = true
+        let point = panGes.location(in: self.view)
+        if self.ashbinView.frame.contains(point) {
+            (sticker as? ZLStickerViewAdditional)?.moveToAshbin()
+            self.isStickerAdded = false
+        }
+        self.stickersContainer.subviews.forEach { (view) in
+            (view as? ZLStickerViewAdditional)?.gesIsEnabled = true
+            self.isStickerAdded = true
+        }
+        
+        if self.isStickerAdded {
+            var textStickers: [(ZLTextStickerState, Int)] = []
+            var imageStickers: [(ZLImageStickerState, Int)] = []
+            for (index, view) in self.stickersContainer.subviews.enumerated() {
+                if let ts = view as? ZLTextStickerView, let _ = ts.label.text {
+                    textStickers.append((ts.state, index))
+                } else if let ts = view as? ZLImageStickerView {
+                    imageStickers.append((ts.state, index))
+                }
             }
-        }
-        
-        var hasEdit = true
-        if self.drawPaths.isEmpty, self.editRect.size == self.imageSize, self.angle == 0, self.mosaicPaths.isEmpty, imageStickers.isEmpty, textStickers.isEmpty, self.currentFilter.applier == nil {
-            hasEdit = false
-        }
-        
-        var resImage = self.originalImage
-        let editModel = ZLEditImageModel(drawPaths: self.drawPaths, mosaicPaths: self.mosaicPaths, editRect: self.editRect, angle: self.angle, selectRatio: self.selectRatio, selectFilter: self.currentFilter, textStickers: textStickers, imageStickers: imageStickers)
-        if hasEdit {
-            resImage = self.buildImage()
-            resImage = resImage.clipImage(self.angle, self.editRect) ?? resImage
-            if let oriDataSize = self.originalImage.jpegData(compressionQuality: 1)?.count {
-                resImage = resImage.compress(to: oriDataSize)
+
+            var hasEdit = true
+            if self.drawPaths.isEmpty, self.editRect.size == self.imageSize, self.angle == 0, self.mosaicPaths.isEmpty, imageStickers.isEmpty, textStickers.isEmpty, self.currentFilter.applier == nil {
+                hasEdit = false
             }
+
+            var resImage = self.originalImage
+            let editModel = ZLEditImageModel(drawPaths: self.drawPaths, mosaicPaths: self.mosaicPaths, editRect: self.editRect, angle: self.angle, selectRatio: self.selectRatio, selectFilter: self.currentFilter, textStickers: textStickers, imageStickers: imageStickers)
+            if hasEdit {
+                resImage = self.buildImage()
+                resImage = resImage.clipImage(self.angle, self.editRect) ?? resImage
+                if let oriDataSize = self.originalImage.jpegData(compressionQuality: 1)?.count {
+                    resImage = resImage.compress(to: oriDataSize)
+                }
+            }
+            self.editFinishBlock?(resImage, editModel)
+
+            self.dismiss(animated: self.animateDismiss, completion: nil)
+        } else {
+            let alertController = UIAlertController(title: "Please select a sticker to continue.", message: "", preferredStyle: .alert)
+                            alertController.addAction(UIAlertAction(title: "Okay", style: .default, handler: { (action) in
+                                alertController.dismiss(animated: true, completion: nil)
+                            }))
+                            self.present(alertController, animated: true, completion: nil)
         }
-        self.editFinishBlock?(resImage, editModel)
         
-        self.dismiss(animated: self.animateDismiss, completion: nil)
     }
     
     @objc func revokeBtnClick() {
@@ -1093,7 +1127,7 @@ extension ZLEditImageViewController: UICollectionViewDataSource, UICollectionVie
     
     public func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         if collectionView == self.editToolCollectionView {
-            return self.tools.count
+            return self.newTools.count
         } else if collectionView == self.drawColorCollectionView {
             return self.drawColors.count
         } else {
@@ -1105,7 +1139,7 @@ extension ZLEditImageViewController: UICollectionViewDataSource, UICollectionVie
         if collectionView == self.editToolCollectionView {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ZLEditToolCell.zl_identifier(), for: indexPath) as! ZLEditToolCell
             
-            let toolType = self.tools[indexPath.row]
+            let toolType = self.newTools[indexPath.row]
             cell.icon.isHighlighted = false
             cell.toolType = toolType
             cell.icon.isHighlighted = toolType == self.selectedTool
@@ -1150,7 +1184,7 @@ extension ZLEditImageViewController: UICollectionViewDataSource, UICollectionVie
     
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if collectionView == self.editToolCollectionView {
-            let toolType = self.tools[indexPath.row]
+            let toolType = self.newTools[indexPath.row]
             switch toolType {
             case .draw:
                 self.drawBtnClick()
@@ -1258,10 +1292,12 @@ extension ZLEditImageViewController: ZLTextStickerViewDelegate {
         let point = panGes.location(in: self.view)
         if self.ashbinView.frame.contains(point) {
             (sticker as? ZLStickerViewAdditional)?.moveToAshbin()
+            self.isStickerAdded = false
         }
         
         self.stickersContainer.subviews.forEach { (view) in
             (view as? ZLStickerViewAdditional)?.gesIsEnabled = true
+            self.isStickerAdded = true
         }
     }
     
