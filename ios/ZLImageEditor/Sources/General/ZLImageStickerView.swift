@@ -201,12 +201,15 @@ class ZLImageStickerView: UIView, ZLStickerViewAdditional {
         self.startTimer()
     }
     
-    @objc func pinchAction(_ ges: UIPinchGestureRecognizer) {
+   @objc func pinchAction(_ ges: UIPinchGestureRecognizer) {
         guard self.gesIsEnabled else { return }
-        
+        // Define maximum and minimum scale values based on screen size
+        let maxScale: CGFloat = 1.7 // You can adjust this value as needed
+        let minScale: CGFloat = 0.5 // You can adjust this value as needed
         self.gesScale *= ges.scale
         ges.scale = 1
-        
+        // Ensure gesScale is within the bounds
+        self.gesScale = max(min(self.gesScale, maxScale), minScale)
         if ges.state == .began {
             self.setOperation(true)
         } else if ges.state == .changed {
